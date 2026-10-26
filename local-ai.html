@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Локальный ИИ</title>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=JetBrains+Mono&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f4f6fb;--surf:#fff;--ink:#141b2d;--mute:#667089;--line:#dde2ee;--acc:#3d5afe;--accT:#fff;--user:#e6ebff;--codebg:#101727;--codeink:#dbe4ff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0b1020;--surf:#131a2e;--ink:#e8ecf8;--mute:#8d97b5;--line:#232c47;--acc:#8ea2ff;--accT:#0b1020;--user:#1b2447;--codebg:#070b16;color-scheme:dark}}
+*{box-sizing:border-box;margin:0}
+html,body{height:100%}
+body{font:16px/1.55 Manrope,system-ui,sans-serif;background:var(--bg);color:var(--ink);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+header{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--surf)}
+header h1{font-size:17px;font-weight:700;margin-right:auto}
+select,button,textarea{font:inherit;color:inherit}
+select{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:8px 10px;max-width:100%;min-width:0}
+.btn{border:0;border-radius:10px;padding:8px 14px;font-weight:600;background:var(--acc);color:var(--accT);cursor:pointer}
+.btn.ghost{background:transparent;color:var(--mute);border:1px solid var(--line)}
+.btn:disabled{opacity:.5;cursor:default}
+:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+#status{padding:8px 14px;font-size:14px;color:var(--mute);border-bottom:1px solid var(--line)}
+#bar{height:3px;background:var(--line);display:none}#bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .2s}
+main{flex:1;overflow-y:auto;padding:16px 14px;scroll-behavior:smooth}
+.wrap{max-width:780px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+.msg{max-width:100%;overflow-wrap:anywhere}
+.msg.user{align-self:flex-end;background:var(--user);padding:10px 14px;border-radius:16px 16px 4px 16px;max-width:88%;white-space:pre-wrap}
+.msg.bot{background:var(--surf);border:1px solid var(--line);padding:12px 16px;border-radius:16px 16px 16px 4px}
+.msg p{margin:0 0 10px}.msg p:last-child{margin:0}
+.msg h4{margin:8px 0 6px}.msg ul{padding-left:22px;margin:0 0 10px}
+code{font-family:'JetBrains Mono',ui-monospace,monospace;font-size:.88em}
+.msg p code,.msg li code{background:var(--bg);padding:1px 6px;border-radius:6px}
+.code{margin:8px 0 12px;border-radius:12px;overflow:hidden;background:var(--codebg)}
+.ch{display:flex;justify-content:space-between;align-items:center;padding:6px 12px;font-size:13px;color:#8d97b5;border-bottom:1px solid #1d2744}
+.ch button{background:none;border:0;color:#aab6ff;cursor:pointer;padding:2px 4px}
+pre{overflow-x:auto;padding:12px;color:var(--codeink);line-height:1.5}
+.empty{text-align:center;margin:8vh auto 0;max-width:520px}
+.empty h2{font-size:24px;margin-bottom:8px}.empty p{color:var(--mute);margin-bottom:18px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;justify-content:center}
+.chips button{background:var(--surf);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
+.chips button:hover{border-color:var(--acc)}
+footer{padding:10px 14px;background:var(--surf);border-top:1px solid var(--line)}
+.box{max-width:780px;margin:0 auto;display:flex;gap:8px;align-items:flex-end}
+textarea{flex:1;resize:none;max-height:180px;min-height:44px;padding:10px 12px;border-radius:14px;border:1px solid var(--line);background:var(--bg)}
+.box .btn{height:44px}
+@media (max-width:520px){header h1{width:100%}select{flex:1}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Локальный ИИ</h1>
+  <select id="model" aria-label="Модель"></select>
+  <button class="btn" id="load">Загрузить</button>
+  <button class="btn ghost" id="clear">Очистить</button>
+</header>
+<div id="status">Выбери модель и нажми «Загрузить». Первый раз она скачается в браузер, дальше работает из кэша.</div>
+<div id="bar"><i></i></div>
+<main id="main"><div class="wrap" id="chat"></div></main>
+<footer>
+  <div class="box">
+    <textarea id="inp" rows="1" placeholder="Напиши задачу или вопрос…" aria-label="Сообщение"></textarea>
+    <button class="btn" id="send" disabled>Отправить</button>
+  </div>
+</footer>
+
+<script type="module">
+import * as webllm from "https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.79/+esm";
+
+const MODELS = [
+  ["Qwen2.5-Coder-0.5B-Instruct-q4f16_1-MLC", "Для телефона · 0.5B · ~400 МБ"],
+  ["Llama-3.2-1B-Instruct-q4f16_1-MLC", "Для телефона · 1B · ~700 МБ"],
+  ["Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC", "Быстрая · 1.5B · ~1 ГБ"],
+  ["Qwen2.5-Coder-3B-Instruct-q4f16_1-MLC", "Сбалансированная · 3B · ~2 ГБ"],
+  ["Qwen2.5-Coder-7B-Instruct-q4f16_1-MLC", "Умная · 7B · ~5 ГБ"]
+];
+const SYSTEM = "Ты — дружелюбный ИИ-помощник и сильный программист. Отвечай на языке пользователя. Код пиши полным, рабочим и в блоках ```язык. Сначала коротко поясни идею, потом дай код. Если не уверен — честно скажи об этом.";
+const $ = id => document.getElementById(id);
+const chat = $("chat"), main = $("main"), inp = $("inp"), send = $("send"), status = $("status");
+let engine = null, busy = false, history = [];
+
+try { history = JSON.parse(localStorage.getItem("chat") || "[]"); } catch {}
+const save = () => { try { localStorage.setItem("chat", JSON.stringify(history.slice(-40))); } catch {} };
+
+const ids = new Set(webllm.prebuiltAppConfig.model_list.map(m => m.model_id));
+MODELS.filter(m => ids.has(m[0])).forEach(([v, t]) => $("model").add(new Option(t, v)));
+const phone = matchMedia("(pointer:coarse)").matches;
+if (!phone) $("model").value = "Qwen2.5-Coder-1.5B-Instruct-q4f16_1-MLC";
+if (!navigator.gpu) status.textContent = "Нет WebGPU. На телефоне нужен Chrome (Android 12+, от 6 ГБ памяти) или iPhone с iOS 18+ в Safari.";
+else if (location.protocol === "file:") status.textContent = "Совет: на телефоне надёжнее открыть файл по https-ссылке (GitHub Pages, Netlify), а не из памяти. Выбери модель и нажми «Загрузить».";
+
+const esc = s => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+function md(t) {
+  return t.split("```").map((p, i) => {
+    if (i % 2) {
+      const n = p.indexOf("\n"), lang = n < 0 ? p : p.slice(0, n), code = n < 0 ? "" : p.slice(n + 1);
+      return `<div class="code"><div class="ch"><span>${esc(lang.trim()) || "код"}</span><button data-copy>Копировать</button></div><pre><code>${esc(code)}</code></pre></div>`;
+    }
+    const h = esc(p)
+      .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+      .replace(/^#{1,4} (.+)$/gm, "<h4>$1</h4>")
+      .replace(/^(?:[-*] .+(?:\n|$))+/gm, m => "<ul>" + m.trim().split("\n").map(l => "<li>" + l.slice(2) + "</li>").join("") + "</ul>");
+    return h.split(/\n{2,}/).filter(x => x.trim()).map(x => /^<(h4|ul)/.test(x.trim()) ? x : "<p>" + x.replace(/\n/g, "<br>") + "</p>").join("");
+  }).join("");
+}
+
+function add(role, text) {
+  const d = document.createElement("div");
+  d.className = "msg " + (role === "user" ? "user" : "bot");
+  role === "user" ? d.textContent = text : d.innerHTML = md(text);
+  chat.append(d); main.scrollTop = main.scrollHeight; return d;
+}
+function render() {
+  chat.innerHTML = "";
+  if (!history.length) {
+    chat.innerHTML = `<div class="empty"><h2>Привет! Я работаю прямо в твоём браузере</h2><p>Без API и серверов: модель запускается на твоём устройстве. Умею писать и объяснять код.</p><div class="chips"></div></div>`;
+    ["Напиши игру «Змейка» на HTML", "Объясни, что такое замыкания в JS", "Найди ошибку в моём коде"].forEach(t => {
+      const b = document.createElement("button"); b.textContent = t;
+      b.onclick = () => { inp.value = t; inp.focus(); }; chat.firstChild.querySelector(".chips").append(b);
+    });
+  } else history.forEach(m => add(m.role, m.content));
+}
+render();
+
+$("load").onclick = async () => {
+  if (!navigator.gpu) return;
+  const id = $("model").value; if (!id) return;
+  $("load").disabled = true; send.disabled = true; $("bar").style.display = "block";
+  try {
+    engine = engine || new webllm.MLCEngine();
+    engine.setInitProgressCallback(r => { status.textContent = r.text; $("bar").firstChild.style.width = Math.round(r.progress * 100) + "%"; });
+    await engine.reload(id);
+    status.textContent = "Готово. Модель работает локально — можно писать.";
+    send.disabled = false; inp.focus();
+  } catch (e) { status.textContent = "Не удалось загрузить: " + (e.message || e); }
+  $("load").disabled = false; setTimeout(() => $("bar").style.display = "none", 600);
+};
+
+async function ask() {
+  const text = inp.value.trim();
+  if (!text || busy || !engine) return;
+  if (!history.length) chat.innerHTML = "";
+  inp.value = ""; inp.style.height = "auto";
+  history.push({ role: "user", content: text }); add("user", text);
+  const out = add("bot", "…"); let acc = "";
+  busy = true; send.textContent = "Стоп"; send.disabled = false;
+  try {
+    const stream = await engine.chat.completions.create({
+      messages: [{ role: "system", content: SYSTEM }, ...history.slice(-12)],
+      stream: true, temperature: 0.4, max_tokens: 2048
+    });
+    for await (const c of stream) {
+      acc += c.choices[0]?.delta?.content || "";
+      out.innerHTML = md(acc); main.scrollTop = main.scrollHeight;
+    }
+  } catch (e) { acc += "\n\n(Ошибка: " + (e.message || e) + ")"; out.innerHTML = md(acc); }
+  history.push({ role: "assistant", content: acc }); save();
+  busy = false; send.textContent = "Отправить";
+}
+send.onclick = () => busy ? engine.interruptGenerate() : ask();
+inp.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey && matchMedia("(hover:hover)").matches) { e.preventDefault(); ask(); } });
+inp.addEventListener("input", () => { inp.style.height = "auto"; inp.style.height = inp.scrollHeight + "px"; });
+$("clear").onclick = () => { if (busy) return; history = []; save(); render(); };
+chat.addEventListener("click", e => {
+  if (e.target.dataset.copy === undefined) return;
+  navigator.clipboard.writeText(e.target.closest(".code").querySelector("code").textContent);
+  e.target.textContent = "Скопировано"; setTimeout(() => e.target.textContent = "Копировать", 1500);
+});
+</script>
+</body>
+</html>
